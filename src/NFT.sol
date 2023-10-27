@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.18;
+pragma solidity 0.8.20;
 
 import "@openzeppelin/contracts/token/ERC721/ERC721.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
@@ -9,16 +9,16 @@ contract NFT is ERC721, Ownable {
     mapping (uint256 => NFTMetadata) private nfts;
 
     struct NFTMetadata {
-        bytes32 name;
+        string name;
         string description;
         string image;
     }
 
     uint256 private _nextTokenId;
 
-    constructor(string memory name, string memory symbol) ERC721(name, symbol) {}
+    constructor(string memory name, string memory symbol) ERC721(name, symbol) Ownable(msg.sender){}
 
-    function safeMint(address to, string memory uri, bytes32 name, string memory description) public onlyOwner {
+    function safeMint(address to, string memory uri, string memory name, string memory description) public onlyOwner {
         uint256 tokenId = _nextTokenId++;
         _safeMint(to, tokenId);
         nfts[tokenId] = NFTMetadata({
@@ -28,13 +28,8 @@ contract NFT is ERC721, Ownable {
         });
     }
 
-    // The following functions are overrides required by Solidity.
     function tokenURI(uint256 tokenId) public view override(ERC721) returns (string memory) {
         NFTMetadata memory nft = nfts[tokenId];
         return string(abi.encodePacked("\"name\":", nft.name, ",\"description\":", nft.description, ",\"image\":", nft.image));
-    }
-
-    function supportsInterface(bytes4 interfaceId) public view override(ERC721) returns (bool) {
-        return super.supportsInterface(interfaceId);
     }
 }
