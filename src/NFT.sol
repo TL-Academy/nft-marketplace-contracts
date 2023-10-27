@@ -2,26 +2,39 @@
 pragma solidity ^0.8.18;
 
 import "@openzeppelin/contracts/token/ERC721/ERC721.sol";
-import "@openzeppelin/contracts/token/ERC721/extensions/ERC721URIStorage.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 
-contract NFT is ERC721, ERC721URIStorage, Ownable {
+contract NFT is ERC721, Ownable {
+
+    mapping (uint256 => NFTMetadata) private nfts;
+
+    struct NFTMetadata {
+        bytes32 name;
+        string description;
+        string image;
+    }
+
     uint256 private _nextTokenId;
 
     constructor(string memory name, string memory symbol) ERC721(name, symbol) {}
 
-    function safeMint(address to, string memory uri) public onlyOwner {
+    function safeMint(address to, string memory uri, bytes32 name, string memory description) public onlyOwner {
         uint256 tokenId = _nextTokenId++;
         _safeMint(to, tokenId);
-        _setTokenURI(tokenId, uri);
+        nfts[tokenId] = NFTMetadata({
+            name: name,
+            description: description,
+            image: uri
+        });
     }
 
     // The following functions are overrides required by Solidity.
-    function tokenURI(uint256 tokenId) public view override(ERC721, ERC721URIStorage) returns (string memory) {
-        return super.tokenURI(tokenId);
+    function tokenURI(uint256 tokenId) public view override(ERC721) returns (string memory) {
+        NFTMetadata memory nft = nfts[tokenId];
+        return string(abi.encodePacked("\"name\":", nft.name, ",\"description\":", nft.description, ",\"image\":", nft.image));
     }
 
-    function supportsInterface(bytes4 interfaceId) public view override(ERC721, ERC721URIStorage) returns (bool) {
+    function supportsInterface(bytes4 interfaceId) public view override(ERC721) returns (bool) {
         return super.supportsInterface(interfaceId);
     }
 }
