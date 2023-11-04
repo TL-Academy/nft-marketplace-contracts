@@ -1,35 +1,43 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.20;
 
-import "@openzeppelin/contracts/token/ERC721/ERC721.sol";
-import "@openzeppelin/contracts/access/Ownable.sol";
+import {ERC721} from "@openzeppelin/contracts/token/ERC721/ERC721.sol";
+import {ERC721URIStorage} from "@openzeppelin/contracts/token/ERC721/extensions/ERC721URIStorage.sol";
+import {Counters} from "./libraries/Counters.sol";
 
-contract NFT is ERC721, Ownable {
+contract NFT is ERC721URIStorage {
+    event Minted(address indexed contractAddress, address indexed to, uint256 indexed tokenId, string tokenHash);
 
-    mapping (uint256 => NFTMetadata) private nfts;
+    using Counters for Counters.Counter;
 
-    struct NFTMetadata {
-        string name;
-        string description;
-        string image;
+    Counters.Counter private s_tokenIds;
+    mapping(uint256 => string) public s_tokenHashes; //id => hash
+
+    constructor(string memory _name, string memory _symbol) ERC721(_name, _symbol) {}
+
+    /**
+     * @notice Mint a new token
+     * @param _tokenHash metadata uri (ipfs CID hash)
+     */
+    function mint(string memory _tokenHash) public returns (uint256) {
+        s_tokenIds.increment();
+        uint256 newTokenId = s_tokenIds.current();
+        _mint(msg.sender, newTokenId);
+        _setTokenURI(newTokenId, _tokenHash);
+        // @note this is the event that we will listen for in the fe
+        emit Minted(address(this), msg.sender, newTokenId, _tokenHash);
+        return newTokenId;
     }
 
-    uint256 private _nextTokenId;
-
-    constructor(string memory name, string memory symbol) ERC721(name, symbol) Ownable(msg.sender){}
-
-    function safeMint(address to, string memory uri, string memory name, string memory description) public onlyOwner {
-        uint256 tokenId = _nextTokenId++;
-        _safeMint(to, tokenId);
-        nfts[tokenId] = NFTMetadata({
-            name: name,
-            description: description,
-            image: uri
-        });
+    /**
+     * @notice Here we override the baseUri function to construct our tokenUri directly in the contract
+     * @dev this function is called in the tokenURI function which is inherited from the ERC721URIStorage
+     */
+    function _baseURI() internal pure override returns (string memory) {
+        return "https://ipfs.io/ipfs/";
     }
 
-    function tokenURI(uint256 tokenId) public view override(ERC721) returns (string memory) {
-        NFTMetadata memory nft = nfts[tokenId];
-        return string(abi.encodePacked("\"name\":", nft.name, ",\"description\":", nft.description, ",\"image\":", nft.image));
+    function getTokenCounter() public view returns (uint256) {
+        return s_tokenIds.current();
     }
 }
