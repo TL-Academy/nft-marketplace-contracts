@@ -5,37 +5,32 @@ import "./NFT.sol";
 
 contract Marketplace {
 
-    event NFTListed(address indexed listedBy, address indexed collection, uint256 indexed price, uint256 id);
-    event ListingCanceled(address indexed collection, uint256 id);
-    event ListingUpdated(address indexed collection, uint256 indexed newPrice, uint256 id);
-    event NFTTransfered(
-        address indexed transferedFrom, 
-        address indexed transferedTo, 
-        address collection, 
-        uint256 id
-    );
+    event NFTListed(address indexed collection, uint256 indexed price, uint256 indexed id);
+    event ListingCanceled(address indexed collection, uint256 indexed id);
+    event ListingUpdated(address indexed collection, uint256 indexed newPrice, uint256 indexed id);
+    event NFTTransfered(address indexed transferedTo, address indexed collection, uint256 indexed id);
 
     // contract -> (id -> price)
     mapping (address =>  mapping(uint256 => uint256)) private s_NFTPrices;
 
-    error notOwner();
-    error itemAlreadyListed();
-    error itemNotListed();
-    error priceIsZero();
-    error newPriceNotHigher();
-    error couldntPayOldOwner();
-    error marketplaceIsNotApproved();
-    error incorectPriceProvided();
+    error Marketplace__notOwner();
+    error Marketplace__itemAlreadyListed();
+    error Marketplace__itemNotListed();
+    error Marketplace__priceIsZero();
+    error Marketplace__newPriceNotHigher();
+    error Marketplace__couldntPayOldOwner();
+    error Marketplace__marketplaceIsNotApproved();
+    error Marketplace__incorectPriceProvided();
 
     modifier isNFTOwner(address _collection, uint256 _id) {
-        if (NFT(_collection).ownerOf(_id) != msg.sender) revert notOwner();
+        if (NFT(_collection).ownerOf(_id) != msg.sender) revert Marketplace__notOwner();
         _;
     }    
 
     // listed true -> revert if already listed. false -> revert if not listed
     modifier alreadyListed(address _collection, uint256 _id, bool listed) {
-        if (listed && s_NFTPrices[_collection][_id] != 0) revert itemAlreadyListed();
-        if (!listed && s_NFTPrices[_collection][_id] == 0) revert itemNotListed();
+        if (listed && s_NFTPrices[_collection][_id] != 0) revert Marketplace__itemAlreadyListed();
+        if (!listed && s_NFTPrices[_collection][_id] == 0) revert Marketplace__itemNotListed();
         _;
     }
 
@@ -49,9 +44,9 @@ contract Marketplace {
     isNFTOwner(_collection, _id)
     alreadyListed(_collection, _id, true)
     {
-        if(_price==0) revert priceIsZero();
+        if(_price==0) revert Marketplace__priceIsZero();
         s_NFTPrices[_collection][_id] = _price;
-        emit NFTListed(msg.sender, _collection, _price, _id);
+        emit NFTListed(_collection, _price, _id);
     } 
 
 
@@ -77,7 +72,7 @@ contract Marketplace {
     isNFTOwner(_collection, _id) 
     alreadyListed(_collection, _id, false)
     {
-        if(s_NFTPrices[_collection][_id] >= _newPrice) revert newPriceNotHigher();
+        if(s_NFTPrices[_collection][_id] >= _newPrice) revert Marketplace__newPriceNotHigher();
         s_NFTPrices[_collection][_id] = _newPrice;
         emit ListingUpdated(_collection, _newPrice, _id);        
     }
@@ -86,8 +81,8 @@ contract Marketplace {
     function buyNFT(address _collection, uint256 _id) payable public {
         NFT currentCollection = NFT(_collection);
         uint256 _price = s_NFTPrices[_collection][_id];
-        if (currentCollection.getApproved(_id) != address(this)) revert marketplaceIsNotApproved();
-        if (msg.value != _price) revert incorectPriceProvided();
+        if (currentCollection.getApproved(_id) != address(this)) revert Marketplace__marketplaceIsNotApproved();
+        if (msg.value != _price) revert Marketplace__incorectPriceProvided();
         address currentOwner = currentCollection.ownerOf(_id);
         
         currentCollection.safeTransferFrom(
@@ -96,8 +91,8 @@ contract Marketplace {
             _id
         );
 
-        emit NFTTransfered(currentOwner, msg.sender, _collection, _id);
         (bool succes,) = currentOwner.call{value: _price}("");
-        if(!succes) revert couldntPayOldOwner();
+        if(!succes) revert Marketplace__couldntPayOldOwner();
+        emit NFTTransfered(currentOwner, msg.sender, _collection, _id);
     }
 }
