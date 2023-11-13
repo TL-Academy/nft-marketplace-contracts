@@ -3,6 +3,15 @@ pragma solidity 0.8.20;
 
 import "./NFT.sol";
 
+error Marketplace__notOwner();
+error Marketplace__itemAlreadyListed();
+error Marketplace__itemNotListed();
+error Marketplace__priceIsZero();
+error Marketplace__newPriceNotHigher();
+error Marketplace__couldntPayOldOwner();
+error Marketplace__marketplaceIsNotApproved();
+error Marketplace__incorectPriceProvided();
+
 contract Marketplace {
 
     event NFTListed(address indexed collection, uint256 indexed price, uint256 indexed id);
@@ -12,15 +21,6 @@ contract Marketplace {
 
     // contract -> (id -> price)
     mapping (address =>  mapping(uint256 => uint256)) private s_NFTPrices;
-
-    error Marketplace__notOwner();
-    error Marketplace__itemAlreadyListed();
-    error Marketplace__itemNotListed();
-    error Marketplace__priceIsZero();
-    error Marketplace__newPriceNotHigher();
-    error Marketplace__couldntPayOldOwner();
-    error Marketplace__marketplaceIsNotApproved();
-    error Marketplace__incorectPriceProvided();
 
     modifier isNFTOwner(address _collection, uint256 _id) {
         if (NFT(_collection).ownerOf(_id) != msg.sender) revert Marketplace__notOwner();
