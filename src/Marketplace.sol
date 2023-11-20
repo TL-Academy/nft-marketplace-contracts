@@ -1,98 +1,162 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.20;
 
-import "./NFT.sol";
+import {IERC721} from "@openzeppelin/contracts/token/ERC721/IERC721.sol";
+import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 
-error Marketplace__notOwner();
-error Marketplace__itemAlreadyListed();
-error Marketplace__itemNotListed();
-error Marketplace__priceIsZero();
-error Marketplace__newPriceNotHigher();
-error Marketplace__couldntPayOldOwner();
-error Marketplace__marketplaceIsNotApproved();
-error Marketplace__incorectPriceProvided();
+// Errors
+error Marketplace__ItemAlreadyListed(address nftContract, uint256 tokenId);
+error Marketplace__NotOwner(address nftContract, uint256 tokenId, address seller);
+error Marketplace__PriceZero();
+error Marketplace__NotApprovedForMarketplace(address nftContract, uint256 tokenId, address marketplace);
+error Marketplace__ItemNotListed(address nftContract, uint256 tokenId);
+error Marketplace__NotEnoughEtherSent(uint256 itemPrice, uint256 amountSent);
+error Marketplace__NothingToWithdraw();
 
-contract Marketplace {
+contract Marketplace is Ownable {
+    // Events
+    event ItemListed(address indexed nftContract, uint256 indexed tokenId, uint256 price, address indexed seller);
+    event ListingCanceled(address indexed nftContract, uint256 indexed tokenId);
+    event ListingUpdated(address indexed nftContract, uint256 indexed tokenId, uint256 price);
+    event ItemBought(address indexed nftContract, uint256 indexed tokenId);
 
-    event NFTListed(address indexed collection, uint256 indexed price, uint256 indexed id);
-    event ListingCanceled(address indexed collection, uint256 indexed id);
-    event ListingUpdated(address indexed collection, uint256 indexed newPrice, uint256 indexed id);
-    event NFTTransfered(address indexed transferedTo, address indexed collection, uint256 indexed id);
+    // State (storage vaiables)
+    uint256 public constant COMMISSION_FEE = 0.005 ether;
+    uint256 public s_totalCommission = 0;
+    mapping(address => mapping(uint256 => uint256)) public s_listings; // nftContract => tokenId => price
 
-    // contract -> (id -> price)
-    mapping (address =>  mapping(uint256 => uint256)) private s_NFTPrices;
+    /**
+     * @notice Construct a new Marketplace contract
+     * @dev The contract is Ownable => msg.sender is the owner
+     */
+    constructor() Ownable(msg.sender) {}
 
-    modifier isNFTOwner(address _collection, uint256 _id) {
-        if (NFT(_collection).ownerOf(_id) != msg.sender) revert Marketplace__notOwner();
+    /**
+     * @dev Reverts if the item is already listed
+     */
+    modifier itemListed(address _nftContract, uint256 _tokenId) {
+        uint256 price = s_listings[_nftContract][_tokenId];
+        if (price > 0) revert Marketplace__ItemAlreadyListed(_nftContract, _tokenId);
         _;
-    }    
+    }
 
-    // listed true -> revert if already listed. false -> revert if not listed
-    modifier alreadyListed(address _collection, uint256 _id, bool listed) {
-        if (listed && s_NFTPrices[_collection][_id] != 0) revert Marketplace__itemAlreadyListed();
-        if (!listed && s_NFTPrices[_collection][_id] == 0) revert Marketplace__itemNotListed();
+    /**
+     * @dev Reverts if the item is not listed
+     */
+    modifier itemNotListed(address _nftContract, uint256 _tokenId) {
+        uint256 price = s_listings[_nftContract][_tokenId];
+        if (price == 0) revert Marketplace__ItemNotListed(_nftContract, _tokenId);
         _;
     }
 
-
-    function list(
-        address _collection, 
-        uint256 _id, 
-        uint256 _price
-    ) 
-    public 
-    isNFTOwner(_collection, _id)
-    alreadyListed(_collection, _id, true)
-    {
-        if(_price==0) revert Marketplace__priceIsZero();
-        s_NFTPrices[_collection][_id] = _price;
-        emit NFTListed(_collection, _price, _id);
-    } 
-
-
-    function delist(
-        address _collection, 
-        uint256 _id
-    ) 
-    public 
-    isNFTOwner(_collection, _id)
-    alreadyListed(_collection, _id, false)
-    {
-        delete s_NFTPrices[_collection][_id];
-        emit ListingCanceled(_collection, _id);
+    /**
+     * @dev Reverts if the caller is not the owner of the item
+     */
+    modifier isOwner(address _nftContract, uint256 _tokenId) {
+        IERC721 nftContract = IERC721(_nftContract);
+        if (nftContract.ownerOf(_tokenId) != msg.sender) {
+            revert Marketplace__NotOwner(_nftContract, _tokenId, msg.sender);
+        }
+        _;
     }
 
-
-    function updatePrice(
-        address _collection, 
-        uint256 _id,
-        uint256 _newPrice
-    )
-    public
-    isNFTOwner(_collection, _id) 
-    alreadyListed(_collection, _id, false)
-    {
-        if(s_NFTPrices[_collection][_id] >= _newPrice) revert Marketplace__newPriceNotHigher();
-        s_NFTPrices[_collection][_id] = _newPrice;
-        emit ListingUpdated(_collection, _newPrice, _id);        
+    /**
+     * @dev
+     */
+    modifier isItemApprovedForMarketPlace(address _nftContract, uint256 _tokenId) {
+        IERC721 nftContract = IERC721(_nftContract);
+        if (nftContract.getApproved(_tokenId) != address(this)) {
+            revert Marketplace__NotApprovedForMarketplace(_nftContract, _tokenId, address(this));
+        }
+        _;
     }
 
+    /**
+     * @notice List an item for sale
+     * @param _nftContract  nft contract address
+     * @param _tokenId  nft id
+     * @param _price  nft price
+     */
+    function listItem(address _nftContract, uint256 _tokenId, uint256 _price)
+        external
+        isOwner(_nftContract, _tokenId)
+        isItemApprovedForMarketPlace(_nftContract, _tokenId)
+        itemListed(_nftContract, _tokenId)
+    {
+        if (_price == 0) revert Marketplace__PriceZero();
+        s_listings[_nftContract][_tokenId] = _price;
+        emit ItemListed(_nftContract, _tokenId, _price, msg.sender);
+    }
 
-    function buyNFT(address _collection, uint256 _id) payable public {
-        NFT currentCollection = NFT(_collection);
-        uint256 _price = s_NFTPrices[_collection][_id];
-        if (currentCollection.getApproved(_id) != address(this)) revert Marketplace__marketplaceIsNotApproved();
-        if (msg.value != _price) revert Marketplace__incorectPriceProvided();
-        address currentOwner = currentCollection.ownerOf(_id);
-        
-        currentCollection.safeTransferFrom(
-            currentOwner, 
-            msg.sender, 
-            _id
-        );
+    /**
+     * @notice Buy an item
+     * @param _nftContract  nft contract address
+     * @param _tokenId  id of the nft to buy
+     */
+    function buyItem(address _nftContract, uint256 _tokenId) external payable itemNotListed(_nftContract, _tokenId) {
+        uint256 price = s_listings[_nftContract][_tokenId];
+        address seller = IERC721(_nftContract).ownerOf(_tokenId);
 
-        (bool succes,) = currentOwner.call{value: _price}("");
-        if(!succes) revert Marketplace__couldntPayOldOwner();
-        emit NFTTransfered(msg.sender, _collection, _id);
+        if (msg.value < price) revert Marketplace__NotEnoughEtherSent(price, msg.value);
+        delete s_listings[_nftContract][_tokenId]; // delete listing
+        //Transfer NFT to buyer
+        IERC721 nftContract = IERC721(_nftContract);
+        nftContract.safeTransferFrom(seller, msg.sender, _tokenId);
+        // Transfer funds to seller
+        s_totalCommission += COMMISSION_FEE;
+        payable(seller).transfer(price - COMMISSION_FEE); // send ether to seller
+        emit ItemBought(_nftContract, _tokenId);
+    }
+
+    /**
+     * @notice Cancel a listing
+     * @param _nftContract nft contract address
+     * @param _tokenId  nft id
+     * @dev Listing should exist and caller should be the owner of the item
+     */
+    function cancelListing(address _nftContract, uint256 _tokenId)
+        external
+        isOwner(_nftContract, _tokenId)
+        itemNotListed(_nftContract, _tokenId)
+    {
+        delete s_listings[_nftContract][_tokenId];
+        emit ListingCanceled(_nftContract, _tokenId);
+    }
+
+    /**
+     * @notice Update a listing
+     * @param _nftContract nft contract address
+     * @param _tokenId  nft id
+     * @param _price  new nft price
+     * @dev Listing should exist and caller should be the owner of the item
+     */
+    function updateListing(address _nftContract, uint256 _tokenId, uint256 _price)
+        external
+        isOwner(_nftContract, _tokenId)
+        itemNotListed(_nftContract, _tokenId)
+    {
+        if (_price == 0) revert Marketplace__PriceZero();
+        s_listings[_nftContract][_tokenId] = _price;
+        emit ListingUpdated(_nftContract, _tokenId, _price);
+    }
+
+    /**
+     * @notice Withdraw commission
+     * @dev the owner can withdraw the accumalated through sales commission
+     */
+    function withdrawCommission() external onlyOwner {
+        if (s_totalCommission == 0) revert Marketplace__NothingToWithdraw();
+        uint256 commission = s_totalCommission;
+        s_totalCommission = 0;
+        payable(msg.sender).transfer(commission);
+    }
+
+    /**
+     * @dev getter of easier access to listing
+     */
+    function getListing(address _nftContract, uint256 _tokenId) external view returns (uint256, address) {
+        uint256 price = s_listings[_nftContract][_tokenId];
+        IERC721 nftContract = IERC721(_nftContract);
+        return (price, nftContract.ownerOf(_tokenId));
     }
 }
