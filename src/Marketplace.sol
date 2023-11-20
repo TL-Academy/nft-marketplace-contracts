@@ -93,6 +93,6 @@ contract Marketplace {
 
         (bool succes,) = currentOwner.call{value: _price}("");
         if(!succes) revert Marketplace__couldntPayOldOwner();
-        emit NFTTransfered(currentOwner, msg.sender, _collection, _id);
+        emit NFTTransfered(msg.sender, _collection, _id);
     }
 }
